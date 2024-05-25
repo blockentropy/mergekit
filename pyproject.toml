@@ -44,6 +44,7 @@ bakllama = "mergekit.scripts.bakllama:main"
 mergekit-moe = "mergekit.scripts.moe:main"
 mergekit-tokensurgeon = "mergekit.scripts.tokensurgeon:main"
 mergekit-extract-lora = "mergekit.scripts.extract_lora:main"
+mergekit-reduce-layers = "mergekit.scripts.reduce_layers:main"
 mergekit-evolve = "mergekit.scripts.evolve:main"
 
 [tool.setuptools]

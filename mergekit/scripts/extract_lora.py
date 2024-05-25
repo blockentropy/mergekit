@@ -38,10 +38,20 @@ def _low_rank_decomposition(
     U, S, Vh = torch.linalg.svd(weight.float(), full_matrices=False)
 
     # Truncated matrices
-    A = Vh[:reduced_rank, :]
-    B = U[:, :reduced_rank] @ torch.diag(S[:reduced_rank])
+    U_reduced = U[:, :reduced_rank]
+    S_reduced = S[:reduced_rank]
+    Vh_reduced = Vh[:reduced_rank, :]
+    
+    A = Vh_reduced
+    B = U_reduced @ torch.diag(S_reduced)
 
-    return A.to(dtype), B.to(dtype)
+    # Reconstruction of the original matrix using the low rank approximation
+    low_rank_approximation = U_reduced @ torch.diag(S_reduced) @ Vh_reduced
+
+    # Calculate the Frobenius norm of the difference
+    reconstruction_error = torch.norm(weight - low_rank_approximation, p='fro')
+
+    return A.to(dtype), B.to(dtype), reconstruction_error
 
 
 def decompose_delta_weight(
@@ -72,7 +82,11 @@ def decompose_delta_weight(
         reduced_rank <= max_rank
     ), f"The specified rank ({reduced_rank}) must be smaller than or equal to the rank of the weight matrices ({max_rank})"
 
-    A, B = _low_rank_decomposition(delta_weight, reduced_rank=reduced_rank)
+    A, B, reconstruction_error = _low_rank_decomposition(delta_weight, reduced_rank=reduced_rank)
+
+    original_norm = torch.norm(new_weight, p='fro')
+    percentage_loss = 100.0 - ((reconstruction_error / original_norm) * 100)
+    tqdm.write(f'Reconstruction error from rank {reduced_rank} of max rank {max_rank} is {reconstruction_error} at percent preserved: {percentage_loss}')
 
     return A, B
 
@@ -238,6 +252,8 @@ def main(
     for layer_name in tqdm(linear_module_names):
         base_weight = base_loader.get_tensor(f"{layer_name}.weight")
         finetuned_weight = finetuned_loader.get_tensor(f"{layer_name}.weight")
+        tqdm.write(f'Decomposing delta weight of {layer_name}')
+
 
         lora_A, lora_B = decompose_delta_weight(
             finetuned_weight, base_weight, desired_rank, device=device
