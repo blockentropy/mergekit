@@ -131,6 +131,7 @@ def main(
             print(f"Failed to load weight for {layer_name}: {e}")
     print("Weights loaded.")
 
+
     layer_indices = sorted(set(int(name.split('.')[2]) for name in linear_module_names if name.startswith('model.layers')))
 
     print(layer_indices)
@@ -139,21 +140,20 @@ def main(
     # Loop to compare equivalent parts of adjacent layers
     for i in layer_indices:
         if i + 1 in layer_indices:
-            layer_base = f"model.layers.{i}"
-            next_layer_base = f"model.layers.{i + 1}"
+            layer_base = f"model.layers.{i}."
+            next_layer_base = f"model.layers.{i + 1}."
             sum_norm = 0  # Initialize the sum for this layer transition
 
             # Fetch all components for each layer
             current_parts = [name for name in linear_module_names if name.startswith(layer_base)]
             next_parts = [name for name in linear_module_names if name.startswith(next_layer_base)]
 
-            # Match components based on the sub-component name only
-            for part in current_parts:
-                # Correctly extracting the sub-component name after the layer number
-                part_suffix = '.'.join(part.split('.')[3:])  # Fixes the typo here
+            print(f"Comparing layers {i} and {i + 1}")
 
-                # Build the corresponding part name in the next layer
-                corresponding_part = f"{next_layer_base}.{part_suffix}"
+            # Match components based on the exact component name after the layer part
+            for part in current_parts:
+                part_suffix = part[len(layer_base):]  # Correctly extracting the sub-component name
+                corresponding_part = f"{next_layer_base}{part_suffix}"
 
                 if corresponding_part in next_parts:
                     current_weight = layer_weights.get(part)
@@ -164,21 +164,32 @@ def main(
                         delta_weight = next_weight - current_weight
 
                         # Calculate the Frobenius norm of the delta weights
-                        fro_norm = torch.norm(delta_weight, 'fro')
-                        layer_weights[(part, corresponding_part)] = fro_norm
+                        fro_norm = torch.norm(delta_weight, p='fro').item()
                         sum_norm += fro_norm  # Add this norm to the sum for the current layer transition
-                        print(f'Frobenius norm between {part} and {corresponding_part}: {fro_norm}')
+
+                        # Calculate the total norm and the difference for verification (optional)
+                        total_norm = torch.norm(current_weight, p='fro').item()
+                        ratio = fro_norm / total_norm if total_norm != 0 else float('inf')
+                        difference = 1.0 - ratio
+                        print(f'Frobenius norm between {part} and {corresponding_part}: {fro_norm}, Ratio of change: {ratio}')
                     else:
                         print(f"Missing weights for comparison: {part} or {corresponding_part}")
                 else:
                     print(f"No corresponding part found in next layer for {part}")
 
+            # Save the summed norm for this layer pair
             layer_norm_sums[f"{layer_base} to {next_layer_base}"] = sum_norm
 
     print("Layer to Layer Transition Norms Summary:")
     for key, value in layer_norm_sums.items():
         print(f"{key}: Total Frobenius Norm = {value}")
 
+    # Sort the results by norms and print them
+    sorted_norms = sorted(layer_norm_sums.items(), key=lambda x: x[1])
+
+    print("Sorted Layer to Layer Transition Norms:")
+    for layer_pair, total_norm in sorted_norms:
+        print(f"{layer_pair}: Total Frobenius Norm = {total_norm}")
     #with open(os.path.join(out_path, "mergestuff.json"), "w") as f:
     #    json.dump(lora_config, f, indent=2)
 
